@@ -932,3 +932,28 @@ fn test_hostname_match_wildcard() {
     assert!(!check_hostname_match("example.com", "", &sans));
     assert!(!check_hostname_match("deep.sub.example.com", "", &sans));
 }
+
+#[test]
+fn test_hostname_match_san_with_dns_prefix() {
+    // Regression: server_defaults stores SANs as "DNS:example.com" — must still match
+    use testssl_core::checks::rating::model::check_hostname_match;
+    let sans: Vec<String> = vec![
+        "DNS:*.prozorro.sale".to_string(),
+        "DNS:prozorro.sale".to_string(),
+    ];
+    // Apex domain must match the exact-name SAN entry despite "DNS:" prefix
+    assert!(
+        check_hostname_match("prozorro.sale", "", &sans),
+        "apex domain must match DNS:prozorro.sale SAN"
+    );
+    // Subdomain must match wildcard SAN
+    assert!(
+        check_hostname_match("sub.prozorro.sale", "", &sans),
+        "subdomain must match DNS:*.prozorro.sale SAN"
+    );
+    // Unrelated domain must not match
+    assert!(
+        !check_hostname_match("other.com", "", &sans),
+        "unrelated domain must not match"
+    );
+}

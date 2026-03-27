@@ -339,6 +339,14 @@ pub fn check_hostname_match(hostname: &str, cn: &str, sans: &[impl AsRef<str>]) 
 }
 
 fn wildcard_match(hostname: &str, pattern: &str) -> bool {
+    // Strip optional "TYPE:" prefix produced by server_defaults SAN parsing
+    // (e.g. "DNS:example.com" → "example.com", "IP:1.2.3.4" → "1.2.3.4")
+    let pattern = if let Some(pos) = pattern.find(':') {
+        &pattern[pos + 1..]
+    } else {
+        pattern
+    };
+
     if let Some(suffix) = pattern.strip_prefix("*.") {
         // *.example.com matches sub.example.com but not example.com or a.b.example.com
         if !hostname.ends_with(&format!(".{suffix}")) {
