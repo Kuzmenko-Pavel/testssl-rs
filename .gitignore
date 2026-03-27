@@ -1,0 +1,42 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Cargo lock for library crates (keep for binaries)
+# Cargo.lock  ← intentionally NOT ignored (workspace with binaries)
+
+# Node.js
+node_modules/
+crates/testssl-node/node_modules/
+npm-debug.log*
+
+# Native Node.js addons (built, not committed)
+crates/testssl-node/*.node
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test output
+*.log
+/tmp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+dist/
+
+# Env
+.env
+.env.local
+/.claude/
+/tmp_rep_origin_testssl/
+/task.md
+/lcov.info
+Task_ssllabs.md

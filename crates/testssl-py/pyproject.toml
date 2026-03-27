@@ -1,0 +1,37 @@
+[build-system]
+requires = ["maturin>=1,<2"]
+build-backend = "maturin"
+
+[project]
+name = "testssl-py"
+version = "0.1.0"
+description = "Python bindings for testssl-rs — TLS/SSL testing library (Rust port of testssl.sh)"
+requires-python = ">=3.8"
+license = { text = "GPL-2.0" }
+keywords = ["tls", "ssl", "security", "testssl", "scanner", "rust"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+    "Topic :: Security",
+    "Topic :: Internet :: WWW/HTTP",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[tool.maturin]
+module-name = "testssl_py"
+features = ["pyo3/extension-module"]
+python-source = "python"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
