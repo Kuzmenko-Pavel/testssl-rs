@@ -1,0 +1,394 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  # ─── Build CLI Binaries ──────────────────────────────────────────────────────
+  build-cli:
+    name: CLI Binary (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            asset_name: testssl-linux-x64
+            cross: false
+            musl: true
+
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-latest
+            asset_name: testssl-linux-arm64
+            cross: true
+            musl: false
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            asset_name: testssl-macos-x64
+            cross: false
+            musl: false
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            asset_name: testssl-macos-arm64
+            cross: false
+            musl: false
+
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            asset_name: testssl-windows-x64.exe
+            cross: false
+            musl: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install musl-tools (Linux x64 static)
+        if: matrix.musl
+        run: sudo apt-get install -y musl-tools
+
+      - name: Install cross (for arm64 cross-compilation)
+        if: matrix.cross
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }} -p testssl-bin
+
+      - name: Build (native)
+        if: '!matrix.cross'
+        run: cargo build --release --target ${{ matrix.target }} -p testssl-bin
+
+      - name: Rename binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cp target/${{ matrix.target }}/release/testssl ${{ matrix.asset_name }}
+
+      - name: Rename binary (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          Copy-Item target/${{ matrix.target }}/release/testssl.exe ${{ matrix.asset_name }}
+
+      - name: Upload CLI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.asset_name }}
+          path: ${{ matrix.asset_name }}
+          retention-days: 1
+
+  # ─── Build Node.js Native Addons ────────────────────────────────────────────
+  build-node:
+    name: Node (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: crates/testssl-node
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: false
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            cross: false
+            musl: true
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            cross: true
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            cross: false
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            cross: false
+
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            cross: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: node-${{ matrix.target }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: crates/testssl-node/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install musl-tools
+        if: matrix.musl
+        run: sudo apt-get install -y musl-tools
+
+      - name: Install cross (for arm64)
+        if: matrix.cross
+        working-directory: .
+        run: cargo install cross --git https://github.com/cross-rs/cross
+
+      - name: Build Node addon (cross)
+        if: matrix.cross
+        env:
+          CARGO_BUILD_TARGET: ${{ matrix.target }}
+        run: npx napi build --platform --release --target ${{ matrix.target }} --cargo-flags="--no-default-features"
+        # cross-rs handles the actual cross-compilation under the hood via CARGO_BUILD_TARGET
+
+      - name: Build Node addon (native)
+        if: '!matrix.cross'
+        run: npx napi build --platform --release --target ${{ matrix.target }}
+
+      - name: Upload .node artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-${{ matrix.target }}
+          path: crates/testssl-node/*.node
+          retention-days: 1
+
+  # ─── Build Python Wheels ────────────────────────────────────────────────────
+  build-python:
+    name: Python Wheel (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            manylinux: auto
+
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            manylinux: musllinux_1_1
+
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            manylinux: auto
+
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            manylinux: ''
+
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            manylinux: ''
+
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            manylinux: ''
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: py-${{ matrix.target }}
+
+      - name: Build wheels (Linux)
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --manifest-path crates/testssl-py/Cargo.toml --out dist
+          sccache: 'true'
+
+      - name: Build wheels (macOS / Windows)
+        if: runner.os != 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --manifest-path crates/testssl-py/Cargo.toml --out dist
+          sccache: 'true'
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: py-${{ matrix.target }}
+          path: dist/*.whl
+          retention-days: 1
+
+  # ─── Build sdist ────────────────────────────────────────────────────────────
+  build-python-sdist:
+    name: Python sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --manifest-path crates/testssl-py/Cargo.toml --out dist
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: py-sdist
+          path: dist/*.tar.gz
+          retention-days: 1
+
+  # ─── Create GitHub Release ───────────────────────────────────────────────────
+  github-release:
+    name: GitHub Release
+    needs: [build-cli, build-node, build-python, build-python-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all CLI artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Download all Node artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: node-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Show dist contents
+        run: ls -lh dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## testssl-rs ${{ github.ref_name }}
+
+            A full-featured Rust port of [testssl.sh](https://github.com/testssl/testssl.sh).
+
+            ### CLI Downloads
+
+            | Platform | Download |
+            |---|---|
+            | Linux x64 (static) | `testssl-linux-x64` |
+            | Linux arm64 (static) | `testssl-linux-arm64` |
+            | macOS x64 | `testssl-macos-x64` |
+            | macOS arm64 (Apple Silicon) | `testssl-macos-arm64` |
+            | Windows x64 | `testssl-windows-x64.exe` |
+
+            ### Node.js
+
+            ```bash
+            npm install testssl-node
+            ```
+
+            ### Python
+
+            ```bash
+            pip install testssl-py
+            ```
+
+  # ─── Publish to npm ──────────────────────────────────────────────────────────
+  publish-npm:
+    name: Publish npm
+    needs: [build-node]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/testssl-node
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+          cache-dependency-path: crates/testssl-node/package-lock.json
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Download all .node artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: node-*
+          merge-multiple: true
+          path: crates/testssl-node/
+
+      - name: List downloaded artifacts
+        run: ls -lh *.node
+
+      - name: Set package version from tag
+        run: |
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          npm version "$VERSION" --no-git-tag-version
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ─── Publish to PyPI ─────────────────────────────────────────────────────────
+  publish-pypi:
+    name: Publish PyPI
+    needs: [build-python, build-python-sdist]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - name: Download all wheel artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: py-*
+          merge-multiple: true
+          path: dist/
+
+      - name: List dist contents
+        run: ls -lh dist/
+
+      - name: Publish to PyPI
+        uses: PyO3/maturin-action@v1
+        with:
+          command: upload
+          args: --non-interactive --skip-existing dist/*

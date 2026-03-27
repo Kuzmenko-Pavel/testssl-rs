@@ -1,0 +1,22 @@
+[package]
+name = "testssl-core"
+version.workspace = true
+edition.workspace = true
+build = "build.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+bytes = "1"
+x509-parser = "0.16"
+hickory-resolver = "0.24"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+colored = "2"
+csv = "1"
+httparse = "1"
+ring = "0.17"
+webpki = { version = "0.22", features = ["alloc"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }

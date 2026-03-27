@@ -1,0 +1,14 @@
+[workspace]
+members = [
+    "crates/testssl-core",
+    "crates/testssl-bin",
+    "crates/testssl-node",
+    "crates/testssl-py",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["testssl-rs contributors"]
+license = "GPL-2.0"
